@@ -1,11 +1,3 @@
-;Nathan Hoffman	- Product Lead
-;Ruvim Lashchuk	- File I/O
-;Erik Olson		- Pixel FX
-;Seth Murdoch	- Paint Cursor
-;CISP 310
-
-
-
 .586
 .model flat, stdcall
 option casemap :none
@@ -26,34 +18,33 @@ includelib \masm32\lib\gdi32.lib
 WinMainCRTStartup proto
 WinMain proto :DWORD,:DWORD,:DWORD,:DWORD						;procedure prototypes
 getCoord proto :LPARAM
-setColor proto
+
 
 
 .stack 4096
 
 .data?
-hInstance HINSTANCE ?											;handler
+hInstance HINSTANCE ?											;Window handler
 CommandLine LPSTR ?												
 hitpoint POINT <>												;mouse location
-string Word 3 DUP (?)
-
 
 
 
 .data
-AppName  db "MyPaint",0											;window name
-ClassName db "SimpleWinClass",0									
+AppName  db "MyPaint",0											;Window name
+ClassName db "SimpleWinClass",0
 LeftMouseClick db 0												;0=no click yet
 RightMouseClick db 0
 eraseColor DWORD 00FFFFFFh										;Sets erase color to white
 penColor DWORD 0												;Color of pen intitated as black
+
+
 
 redPrompt BYTE "Enter the red value (0-255):",0					;Prompts for changing pen color
 greenPrompt	BYTE "Enter the green value (0-255):",0
 bluePrompt BYTE "Enter the blue value (0-255):",0
 
 
-fileName BYTE "snowmen.bmp",0
 
 .code
 WinMainCRTStartup PROC												;Setup
@@ -78,7 +69,7 @@ WinMain proc hInst:HINSTANCE,hPrevInst:HINSTANCE,CmdLine:LPSTR,CmdShow:DWORD
     push  hInst														;window handle
     pop   wc.hInstance												
     mov   wc.hbrBackground,COLOR_WINDOW+1							;Background color
-    mov   wc.lpszMenuName,NULL										;No menu
+    mov   wc.lpszMenuName, NULL										;No menu
     mov   wc.lpszClassName,OFFSET ClassName							
     invoke LoadIcon,NULL,IDI_APPLICATION							;Window icon
     mov   wc.hIcon,eax												
@@ -103,7 +94,11 @@ WinMain proc hInst:HINSTANCE,hPrevInst:HINSTANCE,CmdLine:LPSTR,CmdShow:DWORD
 WinMain endp
 
 WndProc proc hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM 
-    LOCAL hdc:HDC 
+	LOCAL hdc:HDC 
+	LOCAL ps:PAINTSTRUCT 
+	LOCAL hMemDC:HDC 
+	LOCAL rect:RECT 
+
 
     .IF uMsg==WM_DESTROY											;x button
         invoke PostQuitMessage,NULL									;Closes Window
@@ -154,6 +149,33 @@ WndProc proc hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
 			mov RightMouseClick, FALSE
 		.ENDIF
 
+	.ELSEIF uMsg==WM_KEYDOWN
+		.IF wParam==47h						;G key
+		.ELSEIF wParam==46h					;F key
+		.ELSEIF wParam==52h					;R key
+		.ELSEIF wParam==51h					;E key
+		.ELSEIF wParam==42h					;B key
+		.ELSEIF wParam==41h					;V key
+
+		.ELSEIF wParam==31h					;1 key 
+			mov penColor, 0					;black
+		.ELSEIF wParam==32h
+			mov penColor, 000000FFh			;red
+		.ELSEIF wParam==33h
+			mov penColor, 00FF0000h			;blue
+		.ELSEIF wParam==34h
+			mov penColor, 0000FFFFh			;yellow
+		.ELSEIF wParam==35h
+			mov penColor, 0000FF00h			;green
+		.ELSEIF wParam==36h
+			mov penColor, 000088FFh			;orange
+		.ELSEIF wParam==37h
+			mov penColor, 00FF00FFh			;purple
+		.ELSEIF wParam==38h
+			mov penColor, 00FFFF00h			;cyan
+		.ELSEIF wParam==39h					;9 key
+		.ELSE
+		.ENDIF
 	.ELSE
 		invoke DefWindowProc,hWnd,uMsg,wParam,lParam				
         ret 
@@ -177,27 +199,4 @@ getCoord proc lParam:LPARAM										;Gets mouse coordinates
 getCoord endp
 
 
-;Need to get io.h working first
-setColor proc
-	mov penColor, 0												;Clears pen color
-																;Color format: 00RRGGBBh
-
-
-	;input redPrompt, string, 3									;Adds red component
-	;atod string
-	shl eax, 4
-	add penColor, eax
-
-	;input greenPrompt, string, 3								;Adds green component
-	;atod string
-	shl eax, 2
-	add penColor, eax
-
-	;input bluePrompt, string, 3								;Adds blue component
-	;atod string
-	add penColor, eax
-
-	ret
-setColor endp
 END
-
