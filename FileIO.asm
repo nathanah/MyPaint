@@ -50,31 +50,38 @@
 		hFileOut			DWORD	?				; holds handle for out file
 		
 		inFile				BYTE	"inFile.bmp", 0
-		outFile				BYTE	"outFile.bmp", 0
+		outFile				BYTE	"outFile_Tree_().bmp", 0
 
 		readBytes			DWORD	?				; stores how many bytes were read from file
+		writtenBytes		DWORD	?				; Stores how many bytes were written to file
 		
-		; Temporarily chaning byte value to 3126 BYTEs for 32 x 32 resolution to make debugging more efficient.  
-		pixelArray			BYTE	3126 DUP (?)	; Imposing a resolution limit of 1920 x 1080.  6220800 = 1920*1080*3
+		pixelArray			BYTE	766800 DUP (?)	
 		pixelArray_Size		DWORD	?				; Dynamic element.  Parsed from bmp header.
 		iPixel				BYTE	?, ?, ?			; Individial BRG pixel that will be scaled and stored. Short for "Individual Pixel".
 		
 		bmpHeader			BYTE	54 DUP (?)		; Standard bmp file header size
-		bmpHeader_Size		DWORD	54				; To bypass image header
+		bmpHeader_Size		DWORD	36h				; To bypass image header
 		
 		xPixels				DWORD	?				; Offset of 18 bytes
 		yPixels				DWORD	?				; Offset of 22 bytes
-		padBytes			DWORD	?				; xPixels % 4
+		padBytes			DWORD	?				; (4 - xPixels % 4) % 4
+		stockPadding		DWORD	?				
 		
 		index				DWORD	?				; = (row * xPixel + column) * 3 + row * padding
-<<<<<<< master
-=======
-		sPixel				BYTE	?, ?, ?			; Individial BRG pixel that will be scaled and stored
->>>>>>> master
+		rowIndex			DWORD	?				; Row iterator
+		columnIndex			DWORD	?				; Column iterator
+
+		redDarkenFactor		DWORD	100
+		greenDarkenFactor	DWORD	100
+		blueDarkenFactor	DWORD	100
+
+		just100				DWORD	100
+
+
 
     .code                       ; Tell MASM where the code starts
 
-; «««««««««««««««««««««««««««««««««««««««««««««««««««««««««««««««««««««««««
+; >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 
 start:                          ; The CODE entry point to the program
 
@@ -82,27 +89,15 @@ start:                          ; The CODE entry point to the program
 
     exit
 
-; «««««««««««««««««««««««««««««««««««««««««««««««««««««««««««««««««««««««««
+; >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 
-main proc
-	xor		eax, eax
-	xor		ebx, ebx
-	xor		ecx, ecx
-	xor		edx, edx
-
-
-<<<<<<< master
+colorShift proc
 	;=======================================================================;
 	;		Using CreateFile to get File handle for our output file			;	
 	;=======================================================================;
-=======
-	;===================================================================;
-	;		Using CreateFile to get File handle for our output file		;	
-	;===================================================================;
->>>>>>> master
     ; CreateFile(lpFileName, dwDesiredAccess, dwShareMode, lpSecurityAttributes, dwCreationDisposition, dwFlagsAndAttributes, hTemplateFile)
 	invoke	CreateFile, offset outFile, GENERIC_WRITE, 0, 0, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, 0
-	mov		hFileOut, EAX	; Move file handle from common register for file to output image
+	mov		hFileOut, eax					; Move file handle from common register for file to output image
 
 
 
@@ -111,32 +106,20 @@ main proc
 	;===============================================================================;
 	; CreateFile(lpFileName, dwDesiredAccess, dwShareMode, lpSecurityAttributes, dwCreationDisposition, dwFlagsAndAttributes, hTemplateFile)
 	invoke	CreateFile, offset inFile, GENERIC_READ, 0, 0, OPEN_EXISTING, FILE_ATTRIBUTE_READONLY, 0
-	mov		hFile, EAX		; Move file handle from common register for file to read image
+	mov		hFile, eax						; Move file handle from common register for file to read image
 
 
 
-<<<<<<< master
 	;===================================================================================================================;
 	;		Reading file data.																							;
 	;			Step 1:	parsing file header for file information														;
 	;			step 2:	reading the rest of the information separately to store only the pixel content in pixelArray.	;
 	;					See fastgraph.com/help/bmp_header_format.html													;
 	;===================================================================================================================;
-=======
-	;===============================================================================================================;
-	;  Reading file data.																							;
-	;		Step 1:	parsing file header for file information														;
-	;		step 2:	reading the rest of the information separately to store only the pixel content in pixelArray.	;
-	;				See fastgraph.com/help/bmp_header_format.html													;
-	;===============================================================================================================;
->>>>>>> master
 	; ReadFile(hFile, lpBuffer, nNumberOfBytesToRead, lpNumberOfBytesToRead, lpOverlapped)
-	invoke	ReadFile, hFile, offset bmpHeader, bmpHeader_Size, readBytes, 0
+	invoke	ReadFile, hFile, offset bmpHeader, bmpHeader_Size, offset readBytes, 0
 	
-
-	; DWORD PTR call isn't formatted properly.  Should be DWORD PTR bmpHeader[#], but I want to read up on this.  See chapter 5 for more info.
 	; DWORD because the width value is stored in four bytes
-	; Hexadecimal representation in memory
 	mov		eax, DWORD PTR bmpHeader[22]	; +22 corresponds to height in pixels			
 	mov		yPixels, eax					; Moving double word in eax into yPixels
 	
@@ -144,22 +127,37 @@ main proc
 	mov		xPixels, eax					; Moving double word in eax into yPixels
 
 
+
+	;===================================;
+	;		Calculating Padding			;
+	;===================================;
 	; Finding padding of the rows
 	xor		edx, edx						; Clearing EDX register to prevent overflow and undesired data.
 	; eax currently holds xPixels
 	mov		ebx, 4				
-	div		ebx								; divide eax(xPixels) by 4	; Integer overflow
+	div		ebx								; xPixels % 4
+	sub		ebx, edx						; 4 - (xPixels % 4)
+	mov		eax, ebx						
+	mov		ebx, 4							
+	div		ebx								; (4 - (xPixels % 4)) % 4
 	mov		padBytes, edx					; edx holds remainder
 
-	mov		edx, DWORD PTR [bmpHeader + 2]	; +2 corresponds to file size
+
+
+	;=======================================;
+	;	Calculating Total Pixel Memory		;
+	;=======================================;
+	mov		edx, DWORD PTR bmpHeader[2]	; +2 corresponds to file size
 	sub		edx, bmpHeader_Size				
 	mov		pixelArray_Size, edx			; we are only consider the pixel space as file size
     
 
-	; Reading the rest of the file
+
+	;===========================================;
+	;		Reading the rest of the file		;
+	;===========================================;
 	; ReadFile(hFile, lpBuffer, nNumberOfBytesToRead, lpNumberOfBytesToRead, lpOverlapped)
-	invoke	ReadFile, hFile, offset pixelArray, pixelArray_Size, readBytes, 0
-<<<<<<< master
+	invoke	ReadFile, hFile, offset pixelArray, pixelArray_Size, offset readBytes, 0
 
 
 
@@ -168,141 +166,124 @@ main proc
 	;				The program only manipulates pixel information.						;
 	;===================================================================================;
 	; WriteFile(hFile, lpBuffer, nNumberOfBytesToWrite, lpNumberOfBytesWritten, lpOverlapped)
-	invoke WriteFile, hFileOut, offset bmpHeader, 54, offset hFileOut, 0
-	; cmp		eax, 0
-	; jz		endRowLoop						; WriteFile returns true for success.  If it fails here there is no reason to continue.
-=======
->>>>>>> master
+	invoke WriteFile, hFileOut, offset bmpHeader, 54, offset writtenBytes, 0
 
 
 
 	;===================================================================================;
 	;		Looping through the Pixel Array space and manipulating every RGB pixel.		;
 	;===================================================================================;
-<<<<<<< master
-	xor		edx, edx						; RowCounter: Initialiaze to 0
-											; Range: 0 to (yPixels - 1)			= Rows
-=======
-	mov		edx, yPixels					; Count of rows 
-	dec		yPixels							; Range is 0 to yPixel - 1
->>>>>>> master
+	xor		ecx, ecx						; Row Counter: Initialiaze to 0
+	mov		rowIndex, 0						; Range: 0 to (yPixels - 1)			= Rows
+	
+	xor		edx, edx						; Column Counter: Initialize to 0
+	mov		columnIndex, 0					; Domain: 0 to (xPixels - 1)		= Column
 
 
-	; RowLoop isn't necessary, but it makes the process more intuitive for an image.  
-	; If we wanted to optimize the program we would do away with RowLoop, and have the entire algorithm iterate pixel by pixel
+
 RowLoop:
-	xor		ecx, ecx						; ColumnCounter,: Initialize to 0
-											; Domain: 0 to xPixel - 1			= Columns
+	mov columnIndex, 0						; Reseting column index for new row
 
 ColumnLoop:
-	;=======================================================================================================================;
-	;							The file contains bmpHeader at byte position 0 through 53 									;
-	;		Index = ( Pixel.Row * Row.Width + Pixel.Column ) * Pixel.Size + Pixel.Row * Row.Padding + bmpHeader_Size		;
-	;=======================================================================================================================;
+	;=======================================================================================================;
+	;		Index = ( Pixel.Row * Row.Width + Pixel.Column ) * Pixel.Size + Pixel.Row * Row.Padding			;
+	;=======================================================================================================;
 	xor		eax, eax						; Initialize Registers to clear old data
 	xor		ebx, ebx
 	
-	mov		eax, edx						; row
+	; 
+	mov		eax, rowIndex					; row
 	mul		xPixels							; row * xPixels
-	add		eax, ecx						; row * xPixels + ecx
-<<<<<<< master
-	imul	eax, 3							; (row * xPixels + ecx) * 3			; In 24-bit bmp: Pixel.Size = 3
+	add		eax, columnIndex				; row * xPixels + column
+	imul	eax, 3							; (row * xPixels + column) * 3			; In 24-bit bmp: Pixel.Size = 3
 	mov		ebx, padBytes					; padBytes
-	imul	ebx, edx						; padBytes * edx
-	add		ebx, bmpHeader_Size-1			; padBytes * edx + 53
+	imul	ebx, rowIndex					; padBytes * row
 
 	; Complete Index
-	add		eax, ebx						; [(row * xPixels + ecx) * 3] + [padBytes * edx + 53]
+	add		eax, ebx						; [(row * xPixels + column) * 3] + [padBytes * row]
+
 	mov		index, eax
+	xor		eax, eax
 
 
 	;===========================================================;
 	;			Retrieving the bit RGB24 values					;
 	;				3 Bytes: Red, Green Blue					;
 	;		pixelArray starts at bottom left of the image		;
-	;	  In sets of three bytes, the color order is: BRG		;
+	;	  In sets of three bytes, the color order is: BGR		;
 	;===========================================================;
-=======
-	imul	eax, 3							; (row * xPixels + ecx) * 3
-	mov		index, eax						
-	mov		eax, padBytes					; padBytes
-	imul	eax, edx						; padBytes * edx
-	add		index, eax						; (row * xPixels + ecx) * 3 + padBytes * edx
+	lea		ecx, pixelArray					; load effective address of pixelArray					
+	add		ecx, index						; move to address of the pixel of interest
 
-	;===================================================;
-	;		Retrieving the bit RGB24 values				;
-	;			3 Bytes: Red, Green Blue				;
-	;	pixelArray starts at bottom left of the image	;
-	;  In sets of three bytes, the color order is: BRG	;
-	;				Not operational						;
-	;===================================================;
->>>>>>> master
-	lea		eax, pixelArray					; load effective address of pixelArray					
-	add		eax, index						; move to address of the pixel of interest
-	lea		ebx, sPixel
 
-<<<<<<< master
 	; Instruction operands must be the same size so we're using lower registers
-	mov		bl, BYTE PTR [eax]				; Moving Blue value to ebx		
-	mov		iPixel, bl
+	mov		al, BYTE PTR [ecx]				; Moving Blue value to ebx		
+	imul	eax, blueDarkenFactor
+	div		just100
+	mov		iPixel, al
+	xor		eax, eax
+	xor		edx, edx
 
-	mov		bl, BYTE PTR [eax + 1]			; Moving Green value to ebx
-	mov		iPixel[1], bl
+	mov		al, BYTE PTR [ecx + 1]			; Moving Green value to ebx
+	imul	eax, greenDarkenFactor
+	div		just100
+	mov		iPixel[1], al
+	xor		eax, eax
+	xor		edx, edx
 
-	mov		bl, BYTE PTR [eax + 2]			; Moving Red value to ebx
-	mov		iPixel[2], bl
+	mov		al, BYTE PTR [ecx + 2]			; Moving Red value to ebx
+	imul	eax, redDarkenFactor
+	div		just100
+	mov		iPixel[2], al
+	xor		eax, eax
+	xor		edx, edx
 
-
-	;=======================================;
-	;		Saving pixel to memory			;
-	;			Not operational(?)			;
-=======
-	; mozx pads unused memory with zeros. We are using 32 bit registers and storing 8-bit values. Not operational
-	mov		ebx, BYTE PTR [eax]				; Moving Blue value to ebx		
-	mov		sPixel, ebx
-
-	mov		ebx, BYTE PTR [eax + 1]			; Moving Green value to ebx
-
-	mov		ebx, BYTE PTR [eax + 2]			; Moving Red value to ebx
 	
-
 	;=======================================;
 	;		Saving pixel to memory			;
-	;			Not operational				;
->>>>>>> master
 	;=======================================;
-	mov		eax, offset hFileOut
-	add		eax, index
 	; WriteFile(hFile, lpBuffer, nNumberOfBytesToWrite, lpNumberOfBytesWritten, lpOverlapped)
-	invoke WriteFile, hFileOut, offset iPixel, 3, eax, 0
+	invoke WriteFile, hFileOut, offset iPixel, 3, offset writtenBytes, 0
 
 	; increment ColumnCounter
-	inc		ecx
-	cmp		ecx, xPixels
-	jge		ColumnLoop
+	inc		columnIndex
+	mov		edx, columnIndex
+	cmp		edx, xPixels
+	jl		ColumnLoop
 endColumnLoop:
 
-<<<<<<< master
-	inc		edx
-	cmp		edx, yPixels
-=======
-	; Not operational
-	; write 13 to file,		0D or 13 is carriage return
-	; write 10 to file,		0A or 10 is line feed
+	; WriteFile(hFile, lpBuffer, nNumberOfBytesToWrite, lpNumberOfBytesWritten, lpOverlapped)
+	invoke WriteFile, hFileOut, offset stockPadding, padBytes, offset writtenBytes, 0
 
-	dec		edx
-	cmp		edx, 0
->>>>>>> master
-	jge		RowLoop
+	inc		rowIndex
+	mov		edx, rowIndex
+	cmp		edx, yPixels
+	jl		RowLoop
 
 endRowLoop:
 	
-	mov eax, 0
+	xor		eax, eax
+	xor		ebx, ebx
+	xor		ecx, ecx
+	xor		edx, edx
 	invoke ExitProcess, 0
-	
+
 	ret
+colorShift endp
+
+; >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+
+main proc
+	; mov		al, 32h
+	; mov		outFile[7], al
+
+	mov		redDarkenFactor, 8
+	mov		greenDarkenFactor, 53
+	mov		blueDarkenFactor, 2
+	invoke colorShift
+
 main endp
 
-; «««««««««««««««««««««««««««««««««««««««««««««««««««««««««««««««««««««««««
+; >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 
 end start                       ; Tell MASM where the program ends
